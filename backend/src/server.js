@@ -1,12 +1,16 @@
-import dotenv from "dotenv";
+import "./loadEnv.js"; // must stay the very first import — loads process.env before anything else evaluates
+import http from "http";
 import app from "./app.js";
 import connectionDB from "./config/connectionDB.js";
-
-dotenv.config();
+import { initSocket } from "./sockets/socket.js";
 
 const port = process.env.PORT;
+
+const httpServer = http.createServer(app);
+initSocket(httpServer);
+
 connectionDB().then(() => {
-  app.listen(port, () => {
+  httpServer.listen(port, () => {
     console.log("Server is running at port:", port);
   });
 });

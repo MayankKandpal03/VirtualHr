@@ -9,7 +9,9 @@ const userSchema = new mongoose.Schema(
     email: {
       type: String,
       required: true,
-      index: true,
+      unique: true, // was index-only — didn't actually stop duplicates at the DB level
+      lowercase: true,
+      trim: true,
     },
     password: {
       type: String,
@@ -24,6 +26,12 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       select: false,
+    },
+    // protect.js already reads user.role — it existed nowhere before, so it was always undefined
+    role: {
+      type: String,
+      enum: ["owner", "hr", "admin"],
+      default: "owner",
     },
     refreshToken: {
       type: String,
