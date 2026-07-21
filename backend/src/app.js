@@ -41,6 +41,19 @@ app.use((req, res) => {
 app.use((err, req, res, next) => {
   console.error(err); // swap for a real logger later
 
+  // Multer errors (file too large, too many files) don't carry the AppError
+  // shape (no statusCode/isOperational), so they were falling through to a
+  // bare 500 "Internal Server Error" instead of a message the UI can show.
+  if (err.name === "MulterError") {
+    const message =
+      err.code === "LIMIT_FILE_SIZE"
+        ? "One of the files is too large (max 8MB each)"
+        : err.code === "LIMIT_FILE_COUNT"
+          ? "Too many files in one upload (max 50)"
+          : err.message;
+    return res.status(400).json({ statusCode: 400, data: null, success: false, message, errors: [] });
+  }
+
   const statusCode = err.statusCode || 500;
   const message = err.isOperational ? err.message : "Internal Server Error";
   const errors = Array.isArray(err.errors) ? err.errors : [];

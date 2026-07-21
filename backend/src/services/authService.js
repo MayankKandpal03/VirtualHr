@@ -34,7 +34,13 @@ export const registrationService = async (
     throw new AppError(400, "Missing required fields", missingFields);
   }
 
-  const checkUser = await User.findOne({ email }); // was User.findOne(email) with no await — always truthy, blocked every registration
+  // Schema has `lowercase: true` on email, but that setter only fires on
+  // document assignment/save — it does NOT rewrite query filters. Without this,
+  // a login attempt with different casing than registration ("Jane@x.com" vs
+  // "jane@x.com") would silently fail to match, even though the account exists.
+  const normalizedEmail = email.toLowerCase().trim();
+
+  const checkUser = await User.findOne({ email: normalizedEmail }); // was User.findOne(email) with no await — always truthy, blocked every registration
   if (checkUser) {
     throw new AppError(400, "User already exists");
   }
@@ -43,7 +49,7 @@ export const registrationService = async (
 
   const user = await User.create({
     username,
-    email,
+    email: normalizedEmail,
     password: hashPassword,
     companyName,
     phone,
@@ -65,7 +71,7 @@ export const loginService = async (email, password) => {
 
   // was User.findOne(email).select("+password") with no await —
   // "user" was a Query object (always truthy), so "Invalid credentials" never fired
-  const user = await User.findOne({ email }).select("+password");
+  const user = await User.findOne({ email: email.toLowerCase().trim() }).select("+password");
   if (!user) {
     throw new AppError(400, "Invalid credentials");
   }

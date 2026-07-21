@@ -86,6 +86,7 @@ export const analyzeResume = async (job, fileBuffer, mimeType) => {
       },
     });
   } catch (err) {
+    console.log(err)
     throw new AppError(502, "Gemini request failed", [err.message]);
   }
 

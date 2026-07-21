@@ -25,6 +25,12 @@ export const sendBulkEmails = async (userId, jobId, { candidateIds, subject, tem
   if (!subject || !template) {
     throw new AppError(400, "Missing required fields", ["subject", "template"]);
   }
+  // was missing — without this, an empty/missing candidateIds falls through to
+  // `Candidate.find({ _id: { $in: undefined } ... })`, which throws a raw Mongo
+  // cast error (500) instead of a clean 400.
+  if (!Array.isArray(candidateIds) || !candidateIds.length) {
+    throw new AppError(400, "candidateIds must be a non-empty array");
+  }
 
   const job = await Job.findOne({ _id: jobId, createdBy: userId });
   if (!job) throw new AppError(404, "Job not found");

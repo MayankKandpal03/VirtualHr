@@ -13,6 +13,16 @@ export const uploadCandidatesController = asyncWrap(async (req, res) => {
 
 export const getCandidatesController = asyncWrap(async (req, res) => {
   const job = await jobService.getJobById(req.user.id, req.params.jobId);
+
+  // ?view=all -> every candidate for this job, regardless of status/excluded/score,
+  // sorted by upload order. Used by the upload/progress screen so pending + failed
+  // rows are visible, not just the top-N finished ones the results screen shows.
+  if (req.query.view === "all") {
+    const candidates = await Candidate.find({ jobId: job._id }).sort({ createdAt: 1 });
+    return res.status(200).json(new ApiResponse(200, candidates, "Candidates fetched"));
+  }
+
+  // Default view: the "results" screen — top N by score, excluding anything HR excluded.
   const limit = Number(req.query.limit) || job.totalCandidatesNeeded;
   const candidates = await Candidate.find({ jobId: job._id, excluded: false })
     .sort({ finalScore: -1 })

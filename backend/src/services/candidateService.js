@@ -40,7 +40,17 @@ const extractFiles = (files) => {
     const isZip = file.mimetype === "application/zip" || file.originalname.endsWith(".zip");
 
     if (isZip) {
-      const zip = new AdmZip(file.buffer);
+      // was unguarded — a corrupt/non-zip file with a .zip extension threw
+      // synchronously here and turned the whole upload into a raw 500 instead
+      // of just rejecting that one file.
+      let zip;
+      try {
+        zip = new AdmZip(file.buffer);
+      } catch {
+        rejected.push({ name: file.originalname, reason: "Corrupt or unreadable zip file" });
+        continue;
+      }
+
       for (const entry of zip.getEntries()) {
         if (entry.isDirectory) continue;
         const mimetype = guessMimeType(entry.entryName);
@@ -87,9 +97,17 @@ export const handleUpload = async (jobId, userId, files) => {
   // this is the non-blocking substitute for a real queue. Trade-off: if the
   // process restarts mid-batch, whatever was in flight is lost with no retry.
   // That gap is specifically what BullMQ/Redis would close later, not something fixed here.
-  processCandidates(job, candidateDocs, extracted).catch((err) =>
-    console.error(`Background processing failed for job ${job._id}:`, err),
-  );
+  processCandidates(job, candidateDocs, extracted).catch(async (err) => {
+    // was a bare console.error — candidates were left stuck on "pending" forever
+    // with no signal to the frontend that anything had gone wrong at all.
+    console.error(`Background processing failed for job ${job._id}:`, err);
+    try {
+      await Job.findByIdAndUpdate(job._id, { status: "failed" });
+      getIO().to(`job:${job._id}`).emit("job:failed", { jobId: job._id, error: err.message });
+    } catch (innerErr) {
+      console.error(`Also failed to mark job ${job._id} as failed:`, innerErr);
+    }
+  });
 
   return { accepted: candidateDocs.length, rejected, jobId: job._id };
 };
@@ -122,6 +140,13 @@ const processCandidates = async (job, candidateDocs, files) => {
         status: "failed",
         processingError: err.message,
       });
+
+      // was missing on this branch — totalResumesProcessed only ever incremented
+      // on success, so any batch with at least one failure could never reach
+      // totalResumesUploaded. A progress bar built on those two numbers would
+      // stall just short of 100% forever, even after the job actually finished.
+      await Job.findByIdAndUpdate(job._id, { $inc: { totalResumesProcessed: 1 } });
+
       io.to(`job:${job._id}`).emit("candidate:failed", {
         candidateId: candidate._id,
         error: err.message,
